@@ -1,0 +1,88 @@
+#!/usr/bin/env uv run -s
+# /// script
+# dependencies = []
+# ///
+"""
+Extract and display the docstring for a function.
+
+Usage:
+    ./describe_functions <fully.qualified.function.name>
+
+Example:
+    ./describe_functions libs.utils.service_config.rename_service
+    ./describe_functions libs.macos_automation.notes_app.list_notes
+"""
+
+import sys
+import importlib.util
+import inspect
+from pathlib import Path
+
+project_root = Path(__file__).parent
+
+
+def get_function_docstring(qualified_name: str) -> str:
+    """Import a function and extract its docstring.
+
+    Args:
+        qualified_name: Fully qualified name like 'libs.utils.service_config.rename_service'
+
+    Returns:
+        The function's docstring or error message
+    """
+    parts = qualified_name.rsplit(".", 1)
+    if len(parts) != 2:
+        return f"Error: Invalid qualified name '{qualified_name}'"
+
+    module_name, func_name = parts
+
+    try:
+        # Convert 'libs.x.y' to '.libs/x/y.py' file path
+        module_path_parts = module_name.split(".")
+        if module_path_parts[0] == "libs":
+            module_path_parts[0] = ".libs"
+
+        # Try as a module file first
+        module_file = project_root / "/".join(module_path_parts[:-1]) / f"{module_path_parts[-1]}.py"
+        if not module_file.exists():
+            # Try as a package __init__.py
+            module_file = project_root / "/".join(module_path_parts) / "__init__.py"
+
+        if not module_file.exists():
+            return f"Error: Module file not found for {qualified_name}"
+
+        # Load module from file path
+        spec = importlib.util.spec_from_file_location(module_name, module_file)
+        if spec is None or spec.loader is None:
+            return f"Error: Could not create module spec for {qualified_name}"
+
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+
+        obj = getattr(module, func_name, None)
+        if obj is None:
+            return f"Error: Function '{func_name}' not found in module {module_name}"
+
+        docstring = inspect.getdoc(obj)
+        if docstring is None:
+            return f"Warning: No docstring found for {qualified_name}"
+
+        return docstring
+
+    except Exception as e:
+        return f"Error loading {qualified_name}: {e}"
+
+
+def main():
+    """Main CLI entry point."""
+    if len(sys.argv) != 2 or sys.argv[1] in ["-h", "--help"]:
+        print(__doc__)
+        sys.exit(0 if len(sys.argv) == 2 else 1)
+
+    qualified_name = sys.argv[1]
+    docstring = get_function_docstring(qualified_name)
+    print(docstring)
+
+
+if __name__ == "__main__":
+    main()
